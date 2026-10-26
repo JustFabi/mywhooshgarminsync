@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Activity;
 use App\Models\Device;
 use App\Services\Sync\ActivitySyncService;
+use App\Support\LocalUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,9 +16,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ActivityController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(): Response
     {
-        $user = $request->user();
+        $user = LocalUser::get();
 
         // Ensure the device catalog exists before first use.
         \App\Support\GarminDevices::seed();
@@ -55,7 +56,7 @@ class ActivityController extends Controller
             'days' => 'required|integer|min:1|max:365',
         ]);
 
-        $user = $request->user();
+        $user = LocalUser::get();
         $service = new \App\Services\MyWhoosh\MyWhooshService($user);
 
         $imported = 0;
@@ -87,11 +88,9 @@ class ActivityController extends Controller
      * Sync one activity to Garmin. Called by the frontend loop, activity by
      * activity, so a long list can never exceed PHP's request timeout.
      */
-    public function sync(Request $request, Activity $activity): JsonResponse
+    public function sync(Activity $activity): JsonResponse
     {
-        abort_unless($activity->user_id === $request->user()->id, 403);
-
-        $device = $this->deviceFor($request->user(), $activity);
+        $device = $this->deviceFor($activity);
 
         $result = (new ActivitySyncService)->sync($activity, $device);
 
@@ -109,11 +108,9 @@ class ActivityController extends Controller
     /**
      * Re-fix an activity's FIT file with the chosen watch (no upload).
      */
-    public function fix(Request $request, Activity $activity): JsonResponse
+    public function fix(Activity $activity): JsonResponse
     {
-        abort_unless($activity->user_id === $request->user()->id, 403);
-
-        $device = $this->deviceFor($request->user(), $activity);
+        $device = $this->deviceFor($activity);
         $log = (new ActivitySyncService)->fix($activity, $device);
 
         return response()->json([
@@ -124,13 +121,11 @@ class ActivityController extends Controller
         ]);
     }
 
-    public function download(Request $request, Activity $activity)
+    public function download(Activity $activity)
     {
-        abort_unless($activity->user_id === $request->user()->id, 403);
-
         // Fix on demand when no file exists yet.
         if (! $activity->fit_fixed_path || ! Storage::exists($activity->fit_fixed_path)) {
-            $device = $this->deviceFor($request->user(), $activity);
+            $device = $this->deviceFor($activity);
             (new ActivitySyncService)->fix($activity, $device);
 
             abort_unless($activity->refresh()->fit_fixed_path && Storage::exists($activity->fit_fixed_path), 422, 'FIT file could not be produced');
@@ -142,10 +137,8 @@ class ActivityController extends Controller
         return Storage::download($activity->fit_fixed_path, $title.'-'.$watch.'.fit');
     }
 
-    public function destroy(Request $request, Activity $activity): RedirectResponse
+    public function destroy(Activity $activity): RedirectResponse
     {
-        abort_unless($activity->user_id === $request->user()->id, 403);
-
         if ($activity->fit_fixed_path) {
             Storage::delete($activity->fit_fixed_path);
         }
@@ -159,10 +152,10 @@ class ActivityController extends Controller
     // Internals
     // ------------------------------------------------------------------
 
-    private function deviceFor($user, Activity $activity): Device
+    private function deviceFor(Activity $activity): Device
     {
         return Device::query()->find($activity->device_id)
-            ?? $user->selectedDevice
+            ?? LocalUser::get()->selectedDevice
             ?? Device::default()
             ?? throw new \RuntimeException('No watch available — nothing in the device catalog');
     }

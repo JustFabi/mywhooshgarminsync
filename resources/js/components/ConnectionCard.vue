@@ -37,9 +37,10 @@ watch(
 );
 
 function submit(mode: 'connect' | 'disconnect') {
-    form.submit({
-        url: route(routes[props.kind][mode]),
-        method: mode === 'connect' ? 'post' : 'delete',
+    const url = route(routes[props.kind][mode]);
+    const method = mode === 'connect' ? 'post' : 'delete';
+
+    form.submit(method, url, {
         onSuccess: () => {
             form.password = '';
             form.email = props.connection?.email ?? '';

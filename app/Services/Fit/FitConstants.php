@@ -122,12 +122,14 @@ final class FitConstants
     // ----- record (mesg 20) -----
     public const FIELD_NUM_HEART_RATE = 3;
     public const FIELD_NUM_CADENCE = 4;
+    public const FIELD_NUM_SPEED = 6;
     public const FIELD_NUM_POWER = 7;
     public const FIELD_NUM_TEMPERATURE = 13;
 
     // ----- session (mesg 18) -----
     public const FIELD_NUM_SESSION_START_TIME = 2;
     public const FIELD_NUM_SESSION_TOTAL_TIMER_TIME = 8;
+    public const FIELD_NUM_SESSION_AVG_SPEED = 14;
     public const FIELD_NUM_SESSION_AVG_HEART_RATE = 16;
     public const FIELD_NUM_SESSION_MAX_HEART_RATE = 17;
     public const FIELD_NUM_SESSION_AVG_CADENCE = 18;

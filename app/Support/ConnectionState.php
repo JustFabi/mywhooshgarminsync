@@ -29,7 +29,7 @@ final class ConnectionState
     public static function garmin(User $user): ?array
     {
         $account = $user->garmin;
-        if ($account === null) {
+        if ($account === null || ! $account->hasDiToken()) {
             return null;
         }
 
@@ -37,7 +37,7 @@ final class ConnectionState
             'email' => $account->email,
             'connected_at' => optional($account->connected_at)->toIso8601String(),
             'remembered' => $account->canAutoRelogin(),
-            'expires_at' => optional($account->oauth2_expires_at)->toIso8601String(),
+            'expires_at' => optional($account->di_expires_at)->toIso8601String(),
         ];
     }
 }

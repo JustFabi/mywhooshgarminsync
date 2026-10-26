@@ -5,15 +5,15 @@ namespace App\Http\Controllers;
 use App\Models\Activity;
 use App\Models\Device;
 use App\Support\ConnectionState;
-use Illuminate\Http\Request;
+use App\Support\LocalUser;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function __invoke(Request $request): Response
+    public function __invoke(): Response
     {
-        $user = $request->user();
+        $user = LocalUser::get();
 
         $base = Activity::query()->where('user_id', $user->id);
 

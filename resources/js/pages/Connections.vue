@@ -29,7 +29,7 @@ const breadcrumbs: BreadcrumbItem[] = [{ title: 'Connections', href: '/connectio
             <ConnectionCard
                 kind="garmin"
                 :connection="garmin"
-                description="The upload target. The app performs the Garmin SSO login an Android client would perform and keeps OAuth1/OAuth2 tokens."
+                description="The upload target. The app performs the Garmin SSO login an Android client would perform and keeps DI OAuth2 tokens."
             />
 
             <div class="rounded-xl border border-dashed p-4 text-xs text-muted-foreground">

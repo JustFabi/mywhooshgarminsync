@@ -2,9 +2,7 @@
 
 namespace App\Models;
 
-use App\Services\Garmin\OAuth1Token;
-use App\Services\Garmin\OAuth2Token;
-use Illuminate\Database\Eloquent\Casts\Attribute;
+use App\Services\Garmin\DiToken;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -14,9 +12,8 @@ class GarminAccount extends Model
         'user_id',
         'email',
         'password',
-        'oauth1_token',
-        'oauth2_token',
-        'oauth2_expires_at',
+        'di_token',
+        'di_expires_at',
         'connected_at',
     ];
 
@@ -24,9 +21,8 @@ class GarminAccount extends Model
     {
         return [
             'password' => 'encrypted',
-            'oauth1_token' => 'encrypted:array',
-            'oauth2_token' => 'encrypted:array',
-            'oauth2_expires_at' => 'datetime',
+            'di_token' => 'encrypted:array',
+            'di_expires_at' => 'datetime',
             'connected_at' => 'datetime',
         ];
     }
@@ -36,40 +32,36 @@ class GarminAccount extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function oauth1(): ?OAuth1Token
+    public function diToken(): ?DiToken
     {
-        $data = $this->oauth1_token;
+        $data = $this->di_token;
 
-        return is_array($data) ? OAuth1Token::fromArray($data) : null;
+        return is_array($data) ? DiToken::fromArray($data) : null;
     }
 
-    public function oauth2(): ?OAuth2Token
+    public function setDiToken(DiToken $token): void
     {
-        $data = $this->oauth2_token;
-
-        return is_array($data) ? OAuth2Token::fromArray($data) : null;
+        $this->di_token = $token->toArray();
+        $this->di_expires_at = date('c', $token->expiresAt);
     }
 
-    public function setOAuth2(OAuth2Token $token): void
+    /** A row without usable tokens is not "connected" (e.g. a half-created row). */
+    public function hasDiToken(): bool
     {
-        $this->oauth2_token = $token->toArray();
-        $this->oauth2_expires_at = date('c', $token->expiresAt);
+        $token = $this->diToken();
+
+        return $token !== null && $token->isUsable();
     }
 
-    /** Whether automatic re-login is possible when the OAuth1 token expires. */
+    /** Whether automatic re-login is possible when the tokens expire. */
     public function canAutoRelogin(): bool
     {
         return (bool) $this->password;
     }
 
-    /** Domain of the connected Garmin account (defaults to garmin.com). */
+    /** Domain of the connected Garmin account. */
     public function domain(): string
     {
-        return $this->oauth1()->domain ?: 'garmin.com';
-    }
-
-    protected function password(): Attribute
-    {
-        return Attribute::set(fn ($value) => $value === '' ? null : $value);
+        return 'garmin.com';
     }
 }

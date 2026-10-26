@@ -68,7 +68,7 @@ class Activity extends Model
     }
 
     /** Formatted duration "1h31m54s" from seconds. */
-    protected function durationAttribute(): Attribute
+    protected function duration(): Attribute
     {
         return Attribute::get(function ($value, array $attributes): ?string {
             $seconds = $attributes['duration_seconds'] ?? null;

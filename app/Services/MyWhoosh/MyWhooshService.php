@@ -55,7 +55,7 @@ final class MyWhooshService
             ['user_id' => $this->user->id],
             [
                 'email' => $email,
-                'password' => $rememberPassword ? $password : ($this->user->myWhoosh?->password),
+                'password' => $rememberPassword && $password !== '' ? $password : ($this->user->myWhoosh?->password),
                 'access_token' => $accessToken,
                 'whoosh_id' => $whooshId,
                 'connected_at' => now(),

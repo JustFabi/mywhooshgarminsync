@@ -3,37 +3,24 @@
 namespace App\Services\Garmin;
 
 use App\Models\GarminAccount;
+use Illuminate\Support\Facades\Http;
 
 /**
- * Uploads FIT files to Garmin Connect, ported from mywoosh2garmin's
- * garmin/client.go. Manages OAuth2 expiry and one 401-retry.
+ * Uploads FIT files to Garmin Connect. Authenticates with a "DI" OAuth2
+ * Bearer token (the replacement for the OAuth1/OAuth2 flow Garmin retired in
+ * March 2026), refreshing it via the stored refresh token when needed, with
+ * one 401-retry.
  */
 final class GarminClient
 {
-    private const API_USER_AGENT = 'GCM-iOS-5.19.1.2';
     private const TIMEOUT = 60;
 
-    private ?OAuth2Token $oauth2 = null;
+    private ?DiToken $token = null;
+    private readonly GarminSsoService $sso;
 
-    public function __construct(private readonly GarminAccount $account, private readonly GarminSsoService $sso = new GarminSsoService()) {}
-
-    /**
-     * Resolve a valid OAuth2 token, refreshing from the stored OAuth1 token
-     * when needed. Throws when nothing usable exists.
-     */
-    public function ensureOAuth2(): OAuth2Token
+    public function __construct(private readonly GarminAccount $account, ?GarminSsoService $sso = null)
     {
-        $this->oauth2 = $this->account->oauth2();
-
-        if ($this->oauth2 === null) {
-            throw new GarminAuthException('Garmin is not connected');
-        }
-
-        if ($this->oauth2->isExpired()) {
-            $this->refresh();
-        }
-
-        return $this->oauth2;
+        $this->sso = $sso ?? new GarminSsoService($account->domain());
     }
 
     /**
@@ -78,13 +65,15 @@ final class GarminClient
      */
     private function uploadAttempt(string $bytes, string $filename, int $attempt = 0): array
     {
-        $oauth2 = $this->ensureOAuth2();
-        $domain = $this->account->domain();
+        $token = $this->ensureToken();
 
         $response = Http::withOptions(['timeout' => self::TIMEOUT])
-            ->withToken($oauth2->accessToken)
+            ->withHeaders(GarminSsoService::nativeHeaders([
+                'Authorization' => 'Bearer '.$token->accessToken,
+                'Accept' => 'application/json',
+            ]))
             ->attach('file', $bytes, $filename)
-            ->post(sprintf('https://connectapi.%s/upload-service/upload', $domain));
+            ->post(sprintf('https://connectapi.%s/upload-service/upload', $this->account->domain()));
 
         if ($response->status() === 401 && $attempt === 0) {
             // Token might be stale despite not being expired.
@@ -96,17 +85,35 @@ final class GarminClient
         return [$response->status(), $response->body()];
     }
 
-    private function refresh(): void
+    private function ensureToken(): DiToken
     {
-        $oauth1 = $this->account->oauth1();
-        if ($oauth1 === null || $oauth1->oauthToken === '') {
-            throw new GarminAuthException('no Garmin OAuth1 token on file — reconnect on Connections');
+        if ($this->token === null) {
+            $stored = $this->account->diToken();
+            if ($stored === null || ! $stored->isUsable()) {
+                throw new GarminAuthException('Garmin is not connected');
+            }
+
+            $this->token = $stored;
+
+            if ($stored->isExpiringWithin()) {
+                $this->refresh();
+            }
         }
 
-        $fresh = $this->sso->exchange($oauth1);
-        $this->account->setOAuth2($fresh);
+        return $this->token;
+    }
+
+    private function refresh(): void
+    {
+        $stored = $this->account->diToken();
+        if ($stored === null || ! $stored->isUsable()) {
+            throw new GarminAuthException('no Garmin token on file — reconnect on Connections');
+        }
+
+        $fresh = $this->sso->refreshDiToken($stored);
+        $this->account->setDiToken($fresh);
         $this->account->save();
-        $this->oauth2 = $fresh;
+        $this->token = $fresh;
     }
 
     private function assertNoImportFailures(string $body): void

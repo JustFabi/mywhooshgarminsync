@@ -7,6 +7,7 @@ use App\Models\Device;
 use App\Services\MyWhoosh\MyWhooshService;
 use App\Services\Sync\ActivitySyncService;
 use App\Support\GarminDevices;
+use App\Support\LocalUser;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 
@@ -31,7 +32,7 @@ class MyWhooshSync extends Command
     {
         GarminDevices::seed();
 
-        $user = auth()->user() ?? \App\Models\User::query()->first();
+        $user = LocalUser::get();
         if ($user === null) {
             $this->error('No user exists — register in the webapp first.');
 

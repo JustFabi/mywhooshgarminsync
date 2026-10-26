@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Support\ConnectionState;
 use App\Services\MyWhoosh\MyWhooshService;
+use App\Support\LocalUser;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -11,9 +12,9 @@ use Inertia\Response;
 
 class ConnectionController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(): Response
     {
-        $user = $request->user();
+        $user = LocalUser::get();
 
         return Inertia::render('Connections', [
             'mywhoosh' => ConnectionState::myWhoosh($user),
@@ -29,7 +30,7 @@ class ConnectionController extends Controller
             'remember' => 'boolean',
         ]);
 
-        $service = new MyWhooshService($request->user());
+        $service = new MyWhooshService(LocalUser::get());
 
         try {
             $service->login(
@@ -44,9 +45,9 @@ class ConnectionController extends Controller
         return back()->with('success', 'MyWhoosh connected as '.$data['email']);
     }
 
-    public function disconnectMyWhoosh(Request $request): RedirectResponse
+    public function disconnectMyWhoosh(): RedirectResponse
     {
-        (new MyWhooshService($request->user()))->disconnect();
+        (new MyWhooshService(LocalUser::get()))->disconnect();
 
         return back()->with('success', 'MyWhoosh connection removed');
     }
@@ -59,7 +60,7 @@ class ConnectionController extends Controller
             'remember' => 'boolean',
         ]);
 
-        $service = new \App\Services\Garmin\GarminService($request->user());
+        $service = new \App\Services\Garmin\GarminService(LocalUser::get());
 
         try {
             $service->login(
@@ -74,9 +75,9 @@ class ConnectionController extends Controller
         return back()->with('success', 'Garmin Connect connected as '.$data['email']);
     }
 
-    public function disconnectGarmin(Request $request): RedirectResponse
+    public function disconnectGarmin(): RedirectResponse
     {
-        (new \App\Services\Garmin\GarminService($request->user()))->disconnect();
+        (new \App\Services\Garmin\GarminService(LocalUser::get()))->disconnect();
 
         return back()->with('success', 'Garmin connection removed');
     }

@@ -62,6 +62,14 @@ it('fixes the chained fixture: spoof, averages and temperature', function () {
         ->and($sessions[1]->intValue(FitConstants::FIELD_NUM_SESSION_AVG_HEART_RATE))->toBe(126)
         ->and($sessions[1]->intValue(FitConstants::FIELD_NUM_SESSION_AVG_CADENCE))->toBe(125);
 
+    // avg_speed is recomputed per the FIT profile (total_distance /
+    // total_timer_time), falling back to the record-speed mean when a
+    // session carries no distance. Session #0 has no distance → record mean
+    // (998 raw ≈ 3.59 km/h); session #1: 457.20 m / 840 s → 544 raw ≈ 1.96 km/h.
+    // Neither session originally carried the field at all.
+    expect($sessions[0]->intValue(FitConstants::FIELD_NUM_SESSION_AVG_SPEED))->toBe(998)
+        ->and($sessions[1]->intValue(FitConstants::FIELD_NUM_SESSION_AVG_SPEED))->toBe(544);
+
     // Any temperature bytes that remain on records are invalid patterns.
     $invalidTemperature = App\Services\Fit\FitValue::invalidByte(
         FitConstants::SINT8,
@@ -85,7 +93,9 @@ it('fixes the chained fixture: spoof, averages and temperature', function () {
 
     // The log explains exactly what happened.
     $logText = implode("\n", $log);
-    expect($logText)->toContain('device spoofed: Garmin Fenix 6S Pro');
+    expect($logText)->toContain('device spoofed: Garmin Fenix 6S Pro')
+        ->and($logText)->toContain('→ avg speed:      3.59 km/h (was not present)')
+        ->and($logText)->toContain('→ avg speed:      1.96 km/h (was not present)');
 });
 
 it('fixes the tiny generated fixture', function () {
@@ -102,4 +112,21 @@ it('fixes the tiny generated fixture', function () {
     // Round-trip stability of already-fixed content.
     [$fixed2] = FitFixer::fix($fixed, App\Support\GarminDevices::default());
     expect($fixed2)->toBe($fixed);
+});
+
+it('re-fixing a fixed file is a byte-for-byte no-op', function () {
+    // Guards the avg_speed recompute specifically: the second pass must see
+    // its own value as already correct and write nothing.
+    $bytes = fixture('chained_Activity_activity_poolswim.fit');
+
+    [$fixed] = FitFixer::fix($bytes, [
+        'name' => 'Garmin Fenix 6S Pro',
+        'product_id' => 3288,
+    ]);
+    [$refixed] = FitFixer::fix($fixed, [
+        'name' => 'Garmin Fenix 6S Pro',
+        'product_id' => 3288,
+    ]);
+
+    expect($refixed)->toBe($fixed);
 });

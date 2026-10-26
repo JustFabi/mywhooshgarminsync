@@ -35,29 +35,25 @@ final class GarminService
 
     /**
      * Full SSO login and token storage (optionally remembering the password
-     * so future OAuth1 expiries can be re-logged-in automatically).
+     * so future sessions can be re-established automatically).
+     *
+     * The login runs BEFORE any persistence: a failed attempt must not leave
+     * a tokenless account row behind (it would masquerade as "connected").
      */
     public function login(string $email, string $password, bool $rememberPassword = false): void
     {
-        $account = $this->user->garmin()->updateOrCreate(
+        $token = (new GarminSsoService)->login($email, $password);
+
+        $this->user->garmin()->updateOrCreate(
             ['user_id' => $this->user->id],
             [
                 'email' => $email,
-                'password' => $rememberPassword ? $password : $this->user->garmin?->password,
+                'password' => $rememberPassword && $password !== '' ? $password : $this->user->garmin?->password,
+                'di_token' => $token->toArray(),
+                'di_expires_at' => date('c', $token->expiresAt),
                 'connected_at' => now(),
             ],
         );
-
-        [$oauth1, $oauth2] = (new GarminSsoService($this->domainFor($account)))->login($email, $password);
-
-        $account->oauth1_token = $oauth1->toArray();
-        $account->setOAuth2($oauth2);
-        $account->save();
-    }
-
-    private function domainFor(GarminAccount $account): string
-    {
-        return $account->oauth1()?->domain ?: 'garmin.com';
     }
 
     public function disconnect(): void

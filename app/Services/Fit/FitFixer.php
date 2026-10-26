@@ -8,8 +8,11 @@ namespace App\Services\Fit;
  *
  *  1. Session averages (avg power / HR / cadence) are calculated from record
  *     samples when missing, invalid or zero.
- *  2. Fake temperature readings are stripped (set invalid) from all records.
- *  3. The device identity is spoofed to a selected Garmin watch so Garmin
+ *  2. Session avg_speed is recomputed as total_distance / total_timer_time
+ *     (the FIT profile's own definition) — MyWhoosh writes a bogus value
+ *     into this field, which Garmin displays verbatim as "Avg Speed".
+ *  3. Fake temperature readings are stripped (set invalid) from all records.
+ *  4. The device identity is spoofed to a selected Garmin watch so Garmin
  *     accepts the training stats that come with it (Training Effect, VO2max,
  *     Training Load, Training Status).
  *
@@ -46,6 +49,7 @@ class FitFixer
         $powers = [];
         $heartRates = [];
         $cadences = [];
+        $speeds = [];
         $records = $fit->dataMessagesByNum(FitConstants::MESG_NUM_RECORD);
 
         foreach ($records as $record) {
@@ -62,6 +66,11 @@ class FitFixer
             $cadence = $record->intValue(FitConstants::FIELD_NUM_CADENCE);
             if ($cadence !== null && $cadence !== 0xFF) {
                 $cadences[] = $cadence;
+            }
+
+            $speed = $record->intValue(FitConstants::FIELD_NUM_SPEED);
+            if ($speed !== null && $speed !== 0xFFFF) {
+                $speeds[] = $speed;
             }
         }
 
@@ -98,6 +107,39 @@ class FitFixer
         // Fix missing / zero session averages from collected samples.
         // ------------------------------------------------------------
         foreach ($fit->dataMessagesByNum(FitConstants::MESG_NUM_SESSION) as $session) {
+            // MyWhoosh writes garbage into session avg_speed (observed: a raw
+            // 1525 = 5.5 km/h on a 26 km/h ride), and Garmin displays this
+            // field verbatim as "Avg Speed" while deriving "Avg Moving Speed"
+            // from the records. Recompute it per the FIT profile's own
+            // definition (total_distance / total_timer_time); fall back to
+            // the record-speed mean when the totals are unusable. Scales are
+            // distance:100, timer:1000, speed:1000 → raw = distance×10000/timer.
+            $avgSpeed = null;
+            $distance = $session->intValue(FitConstants::FIELD_NUM_SESSION_TOTAL_DISTANCE);
+            $timer = $session->intValue(FitConstants::FIELD_NUM_SESSION_TOTAL_TIMER_TIME);
+
+            if ($distance !== null && $distance > 0 && $timer !== null && $timer > 0) {
+                $avgSpeed = intdiv($distance * 10000, $timer);
+            } elseif (count($speeds) > 0) {
+                $avgSpeed = self::avgOf($speeds);
+            }
+
+            if ($avgSpeed !== null) {
+                $existing = $session->intValue(FitConstants::FIELD_NUM_SESSION_AVG_SPEED);
+
+                if ($existing !== $avgSpeed) {
+                    if (self::setValue($fit, $session, FitConstants::FIELD_NUM_SESSION_AVG_SPEED, $avgSpeed, FitConstants::UINT16)) {
+                        $logger(sprintf(
+                            '→ avg speed:      %.2f km/h (was %s)',
+                            $avgSpeed / 1000 * 3.6,
+                            $existing !== null && $existing !== 0xFFFF
+                                ? sprintf('%.2f km/h', $existing / 1000 * 3.6)
+                                : 'not present',
+                        ));
+                    }
+                }
+            }
+
             if (count($powers) > 0 && self::shouldFix($session, FitConstants::FIELD_NUM_SESSION_AVG_POWER)) {
                 $avg = self::avgOf($powers);
                 if (self::setValue($fit, $session, FitConstants::FIELD_NUM_SESSION_AVG_POWER, $avg, FitConstants::UINT16)) {
