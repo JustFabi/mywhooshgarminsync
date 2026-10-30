@@ -49,7 +49,7 @@ cp .env.example .env
 php artisan key:generate
 touch database/database.sqlite   # if using the SQLite default
 
-php artisan migrate --seed       # devices catalog + starter users
+php artisan migrate --seed       # Garmin device catalog
 
 npm run build                    # build the Vue frontend (or `npm run dev` while developing)
 php artisan serve                # http://127.0.0.1:8000
@@ -57,14 +57,9 @@ php artisan serve                # http://127.0.0.1:8000
 
 Or run everything at once: `composer run dev` (server + queue/logs + Vite dev server).
 
-### Test accounts
-
-The starter kit seeds two accounts you can use immediately (change/disable in production!):
-
-| Email | Password |
-| --- | --- |
-| `test@example.com` | `password` |
-| `admin@example.com` | `password` |
+There is **no authentication**: whoever reaches the app shares one implicit
+local workspace (single `LocalUser` row). Because of that, the webapp is
+meant for a private server / home network — nothing else guards it.
 
 ---
 
@@ -92,6 +87,53 @@ php artisan mywhoosh:sync --upload-only
 ```
 
 `--watch` matches a catalog entry by name fragment and is remembered per user (same as picking it in the UI).
+
+### Automatic sync from cron (`mywhoosh:cron`)
+
+For unattended runs there is `php artisan mywhoosh:cron`: it reads the
+service credentials from environment values, establishes/freshens both
+sessions as needed, imports new MyWhoosh activities (already-known ids are
+tracked and skipped) and uploads only what is not synced yet. Nothing else
+touches the watch selection: pass it with `--watch="<name fragment>"
+(default: the watch last picked in the UI → Fenix 6S Pro).
+
+```bash
+# one-shot: credentials from Laravel's .env / real environment
+php artisan mywhoosh:cron
+
+# credentials from a dedicated file, looks 14 days back, spoofs a Fenix 7
+php artisan mywhoosh:cron --env-file=/etc/mywhoosh-sync.env --days=14 --watch="fenix 7"
+
+# import without upload / upload without import
+php artisan mywhoosh:cron --fetch-only
+php artisan mywhoosh:cron --upload-only
+```
+
+Credential values (all optional — set only the side you want to automate):
+
+| Env value | Meaning |
+| --- | --- |
+| `MYWHOOSH_EMAIL`, `MYWHOOSH_PASSWORD` | MyWhoosh login; used to log in when no session is stored, when the stored account differs, or when a stored session is rejected. Remembered (encrypted) for transparent re-logins. |
+| `GARMIN_EMAIL`, `GARMIN_PASSWORD` | Garmin Connect login; establishes DI OAuth2 tokens when needed, refreshes them via the stored refresh token, and re-logs-in once on a rejected session. |
+
+Example `mywhoosh-sync.env` (same syntax as `.env`):
+
+```env
+MYWHOOSH_EMAIL=rider@example.com
+MYWHOOSH_PASSWORD="secret with spaces"
+GARMIN_EMAIL=you@example.com
+GARMIN_PASSWORD=garmin-secret
+```
+
+Crontab example — every 30 minutes, logging to the app's log directory:
+
+```cron
+*/30 * * * * cd /srv/mywhooshsync && php artisan mywhoosh:cron >> storage/logs/cron-sync.log 2>&1
+```
+
+Exit code is `0` unless the configuration is incomplete, the MyWhoosh import
+fails, or *every* pending upload fails; individual retries happen on the next
+run (activities keep their pending/failed status).
 
 Fixed FIT files are kept on local disk at `storage/app/fit/{user_id}/{activity_id}.fit`.
 
